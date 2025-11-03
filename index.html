@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>W Digital 360° - Graphe Conceptuel</title>
+    <!-- Load Tailwind CSS for styling the container -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load D3.js for the visualization -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 1rem;
+        }
+        svg {
+            width: 100%;
+            height: 100%;
+            border-radius: 0.5rem;
+            background-color: #ffffff;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
+        .link {
+            stroke: #999;
+            stroke-opacity: 0.6;
+        }
+        .node {
+            /* Cursor will be set in JS based on group */
+        }
+        .node-label {
+            font-size: 12px;
+            font-weight: 600;
+            fill: #111;
+            pointer-events: none; /* Allows dragging the circle beneath */
+            text-anchor: middle;
+            dominant-baseline: central;
+            text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff; /* Readability */
+        }
+        /* Style for the main title */
+        h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: #1a2b4d;
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+
+        /* Modal Styles */
+        .modal-hidden {
+            display: none;
+        }
+        .modal-visible {
+            display: flex;
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 40;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+            position: relative;
+            z-index: 50;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        .modal-close {
+            position: absolute;
+            top: 0.5rem;
+            right: 1rem;
+            font-size: 2rem;
+            font-weight: bold;
+            color: #999;
+            cursor: pointer;
+            line-height: 1;
+        }
+        .modal-close:hover {
+            color: #333;
+        }
+
+        /* Loading Spinner */
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 1rem auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Generated Content Styling */
+        #modal-result pre {
+            background-color: #f9f9f9;
+            border: 1px solid #eee;
+            border-radius: 0.25rem;
+            padding: 1rem;
+            white-space: pre-wrap; /* Wrap long lines */
+            word-wrap: break-word;
+            font-size: 0.9rem;
+            margin-top: 1rem;
+        }
+
+    </style>
+    <!-- Use Inter font from Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+
+    <div class="w-full max-w-6xl p-6 bg-white rounded-lg shadow-xl">
+        <h1>Graphe Conceptuel de W Digital 360°</h1>
+        <div id="visualization" class="w-full h-[700px]">
+            <svg id="graph-svg"></svg>
+        </div>
+    </div>
+
+    <!-- Modal Structure -->
+    <div id="service-modal" class="modal-hidden modal-overlay">
+        <div class="modal-content">
+            <span id="modal-close-btn" class="modal-close">&times;</span>
+            <h2 id="modal-title" class="text-2xl font-bold text-gray-800 mb-4">Service Detail</h2>
+            
+            <button id="generate-button" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition duration-300">
+                ✨ Générer des idées
+            </button>
+            
+            <div id="modal-loader" class="loader modal-hidden"></div>
+            
+            <div id="modal-result" class="mt-4 text-gray-700">
+                <!-- Gemini API results will be injected here -->
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // --- Gemini API Configuration ---
+        const apiKey = ""; // API key is handled by the environment
+        const apiUrl = `https://generativelace.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+        // --- Modal DOM Elements ---
+        const modal = document.getElementById('service-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalResult = document.getElementById('modal-result');
+        const modalLoader = document.getElementById('modal-loader');
+        const generateButton = document.getElementById('generate-button');
+        const closeModalBtn = document.getElementById('modal-close-btn');
+
+        let selectedNode = null; // Store data of the clicked node
+
+        // 1. Define the Data (Nodes and Links)
+        const dataset = {
+            nodes: [
+                // Group 1: Center
+                { id: "W Digital 360°", group: 1, radius: 28 },
+
+                // Group 2: Core Theme
+                { id: "Intelligence Artificielle", group: 2, radius: 22 },
+
+                // Group 3: Core Pillars
+                { id: "Création", group: 3, radius: 18 },
+                { id: "Data", group: 3, radius: 18 },
+                { id: "Technologie", group: 3, radius: 18 },
+
+                // Group 4: Services
+                { id: "Stratégie & Analyse IA", group: 4, radius: 14 },
+                { id: "Gestion des Réseaux Sociaux", group: 4, radius: 14 },
+                { id: "Création de Contenu & Prod. Visuelle", group: 4, radius: 14 },
+                { id: "Campagnes Publicitaires & Performance", group: 4, radius: 14 },
+                { id: "Branding & Réputation Digitale", group: 4, radius: 14 },
+
+                // Group 5: Advantages
+                { id: "Vision globale et intégrée", group: 5, radius: 12 },
+                { id: "Stratégies basées sur la data et l'IA", group: 5, radius: 12 },
+                { id: "Création de contenu adaptée", group: 5, radius: 12 },
+                { id: "Pilotage continu & ajustements", group: 5, radius: 12 }
+            ],
+            links: [
+                // Center to Core Theme
+                { source: "W Digital 360°", target: "Intelligence Artificielle", value: 5 },
+
+                // Center to Pillars
+                { source: "W Digital 360°", target: "Création", value: 3 },
+                { source: "W Digital 360°", target: "Data", value: 3 },
+                { source: "W Digital 360°", target: "Technologie", value: 3 },
+
+                // Pillars to Services (based on document description)
+                { source: "Intelligence Artificielle", target: "Stratégie & Analyse IA", value: 2 },
+                { source: "Data", target: "Stratégie & Analyse IA", value: 2 },
+                
+                { source: "Création", target: "Gestion des Réseaux Sociaux", value: 2 },
+                { source: "Data", target: "Gestion des Réseaux Sociaux", value: 2 },
+
+                { source: "Intelligence Artificielle", target: "Création de Contenu & Prod. Visuelle", value: 2 },
+                { source: "Création", target: "Création de Contenu & Prod. Visuelle", value: 2 },
+
+                { source: "Intelligence Artificielle", target: "Campagnes Publicitaires & Performance", value: 2 },
+                { source: "Data", target: "Campagnes Publicitaires & Performance", value: 2 },
+                { source: "Technologie", target: "Campagnes Publicitaires & Performance", value: 2 },
+
+                { source: "Intelligence Artificielle", target: "Branding & Réputation Digitale", value: 2 },
+                { source: "Création", target: "Branding & Réputation Digitale", value: 2 },
+                { source: "Data", target: "Branding & Réputation Digitale", value: 2 },
+
+                // Center to Advantages
+                { source: "W Digital 360°", target: "Vision globale et intégrée", value: 1 },
+                { source: "W Digital 360°", target: "Stratégies basées sur la data et l'IA", value: 1 },
+                { source: "W Digital 360°", target: "Création de contenu adaptée", value: 1 },
+                { source: "W Digital 360°", target: "Pilotage continu & ajustements", value: 1 }
+            ]
+        };
+
+        // 2. Setup SVG and Dimensions
+        const svg = d3.select("#graph-svg");
+        const width = parseInt(svg.node().getBoundingClientRect().width);
+        const height = parseInt(svg.node().getBoundingClientRect().height);
+
+        // 3. Define a Color Scale
+        const color = d3.scaleOrdinal(d3.schemeCategory10)
+            .domain([1, 2, 3, 4, 5])
+            .range(["#d62728", "#ff7f0e", "#2ca02c", "#1f77b4", "#9467bd"]); // Custom colors
+
+        // 4. Create the Force Simulation
+        const simulation = d3.forceSimulation(dataset.nodes)
+            .force("link", d3.forceLink(dataset.links).id(d => d.id).distance(d => 100 / (d.value * 0.5)))
+            .force("charge", d3.forceManyBody().strength(-250)) // Pushes nodes apart
+            .force("center", d3.forceCenter(width / 2, height / 2))
+            .force("collide", d3.forceCollide().radius(d => d.radius + 10)); // Prevent overlap
+
+        // 5. Draw the Links (Lines)
+        const link = svg.append("g")
+            .attr("class", "links")
+            .selectAll("line")
+            .data(dataset.links)
+            .enter().append("line")
+            .attr("class", "link")
+            .style("stroke-width", d => Math.sqrt(d.value) * 1.5);
+
+        // 6. Draw the Nodes (Circles)
+        const node = svg.append("g")
+            .attr("class", "nodes")
+            .selectAll("circle")
+            .data(dataset.nodes)
+            .enter().append("circle")
+            .attr("class", "node")
+            .attr("r", d => d.radius)
+            .attr("fill", d => color(d.group))
+            .style("cursor", d => (d.group === 4 ? "pointer" : "grab")) // Change cursor for service nodes
+            .on("click", handleNodeClick) // Add click handler
+            .call(drag(simulation)); // Enable dragging
+
+        // 7. Add Text Labels
+        const labels = svg.append("g")
+            .attr("class", "labels")
+            .selectAll("text")
+            .data(dataset.nodes)
+            .enter().append("text")
+            .attr("class", "node-label")
+            .text(d => d.id);
+
+        // 8. Ticked Function (updates positions on each "tick" of the simulation)
+        simulation.on("tick", () => {
+            link
+                .attr("x1", d => d.source.x)
+                .attr("y1", d => d.source.y)
+                .attr("x2", d => d.target.x)
+                .attr("y2", d => d.target.y);
+
+            node
+                .attr("cx", d => d.x)
+                .attr("cy", d => d.y);
+            
+            labels
+                .attr("x", d => d.x)
+                .attr("y", d => d.y);
+        });
+
+        // 9. Drag Functions
+        function drag(simulation) {
+            function dragstarted(event, d) {
+                if (d.group === 4) { // Don't restart simulation if clicking service node
+                    d.fx = d.x;
+                    d.fy = d.y;
+                    return; 
+                }
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+                d3.select(this).style("cursor", "grabbing");
+            }
+            
+            function dragged(event, d) {
+                d.fx = event.x;
+                d.fy = event.y;
+            }
+            
+            function dragended(event, d) {
+                if (d.group === 4) { // Keep service nodes fixed if dragged, but allow click
+                   d3.select(this).style("cursor", "pointer");
+                   return;
+                }
+                if (!event.active) simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+                d3.select(this).style("cursor", "grab");
+            }
+            
+            return d3.drag()
+                .on("start", dragstarted)
+                .on("drag", dragged)
+                .on("end", dragended);
+        }
+
+        // --- New Modal and API Functions ---
+
+        // Handle clicking on a node
+        function handleNodeClick(event, d) {
+            // Check if it's a service node (Group 4)
+            if (d.group === 4) {
+                event.stopPropagation(); // Stop drag from starting
+                selectedNode = d;
+                modalTitle.textContent = d.id;
+                modalResult.innerHTML = ""; // Clear previous results
+                modal.classList.remove("modal-hidden");
+                modal.classList.add("modal-visible");
+            }
+        }
+
+        // Close modal listeners
+        closeModalBtn.addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) { // Only close if clicking the overlay
+                closeModal();
+            }
+        });
+
+        function closeModal() {
+            modal.classList.add("modal-hidden");
+            modal.classList.remove("modal-visible");
+            selectedNode = null;
+        }
+
+        // Handle "Generate" button click
+        generateButton.addEventListener('click', async () => {
+            if (!selectedNode) return;
+
+            modalLoader.classList.remove("modal-hidden");
+            generateButton.classList.add("modal-hidden");
+            modalResult.innerHTML = "";
+
+            try {
+                const { systemPrompt, userPrompt } = getGeminiPrompts(selectedNode.id);
+
+                const payload = {
+                    contents: [{ parts: [{ text: userPrompt }] }],
+                    systemInstruction: {
+                        parts: [{ text: systemPrompt }]
+                    },
+                };
+
+                const responseText = await fetchWithBackoff(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                // Format and display the result
+                modalResult.innerHTML = `<pre>${responseText}</pre>`;
+
+            } catch (error) {
+                console.error("Error calling Gemini API:", error);
+                modalResult.innerHTML = `<p class="text-red-500">Une erreur est survenue. Veuillez réessayer. ${error.message}</p>`;
+            } finally {
+                modalLoader.classList.add("modal-hidden");
+                generateButton.classList.remove("modal-hidden");
+            }
+        });
+
+        // Create specific prompts for each service
+        function getGeminiPrompts(serviceId) {
+            const systemPrompt = "Tu es un consultant expert en marketing digital chez 'W Digital 360°'. Tu es spécialisé dans l'utilisation de l'IA pour des stratégies innovantes. Réponds de manière concise, créative et professionnelle, en français, en utilisant des listes à puces pour la clarté.";
+            let userPrompt = "";
+
+            switch (serviceId) {
+                case "Stratégie & Analyse IA":
+                    userPrompt = "Génère 3 insights clés qu'une analyse IA (profiling comportemental, analyse sémantique) pourrait découvrir pour une entreprise e-commerce de mode durable.";
+                    break;
+                case "Gestion des Réseaux Sociaux":
+                    userPrompt = "Propose 2 idées de posts Instagram (avec storytelling) et 1 idée de thread LinkedIn pour un nouveau café local, en utilisant une approche basée sur l'IA pour analyser les tendances.";
+                    break;
+                case "Création de Contenu & Prod. Visuelle":
+                    userPrompt = "Donne-moi un concept et un script court (30 secondes) pour une vidéo publicitaire générée par IA pour une application de méditation.";
+                    break;
+                case "Campagnes Publicitaires & Performance":
+                    userPrompt = "Décris une stratégie de 'retargeting intelligent' sur Meta (Facebook/Instagram) pour un site de réservation de voyages qui a un fort taux d'abandon de panier, en expliquant comment l'IA optimise le budget.";
+                    break;
+                case "Branding & Réputation Digitale":
+                    userPrompt = "Suggère 3 actions concrètes (utilisant l'IA pour l'analyse de sentiment) pour améliorer l'e-réputation d'un hôtel de luxe qui a reçu quelques avis négatifs récents sur son service.";
+                    break;
+                default:
+                    userPrompt = `Explique brièvement comment l'IA peut améliorer le service suivant : ${serviceId}`;
+            }
+            return { systemPrompt, userPrompt };
+        }
+
+        // Fetch with exponential backoff retry logic
+        async function fetchWithBackoff(url, options, retries = 3, delay = 1000) {
+            try {
+                const response = await fetch(url, options);
+                if (!response.ok) {
+                    if (response.status === 429 && retries > 0) {
+                        // Throttled, retry with backoff
+                        await new Promise(res => setTimeout(res, delay));
+                        return fetchWithBackoff(url, options, retries - 1, delay * 2);
+                    }
+                    throw new Error(`API Error: ${response.status} ${response.statusText}`);
+                }
+                
+                const result = await response.json();
+                const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (!text) {
+                    throw new Error("Réponse invalide de l'API Gemini.");
+                }
+                return text;
+
+            } catch (error) {
+                if (retries > 0) {
+                    await new Promise(res => setTimeout(res, delay));
+                    return fetchWithBackoff(url, options, retries - 1, delay * 2);
+                }
+                throw error;
+            }
+        }
+
+
+        // Handle window resizing
+        window.onresize = () => {
+            const newWidth = parseInt(svg.node().getBoundingClientRect().width);
+            const newHeight = parseInt(svg.node().getBoundingClientRect().height);
+            
+            // Update the center force
+            simulation.force("center", d3.forceCenter(newWidth / 2, newHeight / 2));
+            simulation.alpha(0.3).restart(); // Reheat the simulation
+        };
+
+    </script>
+
+</body>
+</html>
+
